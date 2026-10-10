@@ -126,6 +126,45 @@ npm publish --access public
 Publicar o repositório no GitHub não publica o pacote no npm nem instala o node
 no n8n.
 
+## Publicação automática no npm
+
+O workflow `.github/workflows/publish.yml` executa a cada push na branch `main`
+e também pode ser iniciado manualmente na aba Actions. Ele instala as dependências,
+calcula uma versão inédita, compila, executa os testes e prepara o pacote.
+Com a autorização npm ativada, publica automaticamente como `latest`.
+Atualizações de outras branches não publicam.
+
+Se a versão do `package.json` for maior que todas as versões estáveis no npm,
+essa versão será usada. Caso contrário, o workflow incrementa o patch da maior
+versão estável publicada. Para uma mudança major/minor, altere a versão no projeto
+antes do push. A versão de publicação é aplicada ao manifesto e lockfile no runner;
+a automação não cria commits de versão em `main`. Reexecutar um commit já publicado
+não cria uma versão duplicada. Execuções antigas não substituem um commit
+descendente já publicado. Publicações são serializadas em uma fila de até
+100 execuções pendentes; falhas de testes ou consulta ao registry interrompem o fluxo.
+
+### Autorização inicial
+
+Na conta npm com permissão de manutenção do pacote, abra
+https://www.npmjs.com/package/n8n-nodes-leadr-pms/access e cadastre um
+**Trusted Publisher → GitHub Actions**:
+
+- Organization or user: `LEADr-COMPANY`
+- Repository: `n8n-nodes-leadr-pms`
+- Workflow filename: `publish.yml`
+- Environment name: deixe vazio
+- Allowed actions: permita publicação direta com `npm publish`
+
+Depois, defina a variável de repositório `NPM_PUBLISH_ENABLED` como `true` em
+GitHub → Settings → Secrets and variables → Actions → Variables, e inicie
+**Publish to npm** manualmente para validar a primeira publicação. Sem essa
+variável, o workflow verifica o pacote e informa que a publicação está pendente;
+não anuncia que publicou.
+
+A autenticação usa OIDC, sem token npm permanente nos secrets. É necessário
+concluir a primeira publicação dentro do prazo da configuração informado pelo npm.
+Documentação: https://docs.npmjs.com/trusted-publishers/.
+
 ## Limites
 
 - A API lista do mais antigo para o mais novo. A leitura percorre todo o histórico

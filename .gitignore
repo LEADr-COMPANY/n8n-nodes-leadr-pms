@@ -9,3 +9,4 @@ pack-result.json
 .npmrc
 .codex/
 .agents/
+.playwright-mcp/
