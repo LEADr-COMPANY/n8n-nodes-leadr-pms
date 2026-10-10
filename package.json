@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-leadr-pms",
-  "version": "1.15.9",
+  "version": "1.15.10",
   "description": "LEADr PMS chat memory for n8n AI agents",
   "repository": {
     "type": "git",
@@ -36,11 +36,10 @@
   },
   "dependencies": {
     "@langchain/classic": "1.0.32",
-    "@langchain/core": "1.2.8",
-    "langsmith": "0.10.5"
+    "@langchain/core": "1.2.8"
   },
   "overrides": {
-    "langsmith": "$langsmith"
+    "langsmith": "0.10.5"
   },
   "peerDependencies": {
     "n8n-workflow": ">=2.28.0 <3"

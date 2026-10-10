@@ -18,12 +18,18 @@ const installed = path.join(root, manifest.name);
 const backup = path.join(root, 'previous-install');
 const peer = path.dirname(require.resolve('n8n-workflow/package.json'));
 
-function install() {
+function install(legacyLayout = false) {
   fs.mkdirSync(installed);
   execFileSync('tar', ['-xzf', archive, '-C', installed, '--strip-components=1']);
   const manifestPath = path.join(installed, 'package.json');
   const packaged = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(packaged.name, manifest.name);
+  if (legacyLayout) {
+    // Older releases had only LangChain as direct dependencies. Keep that
+    // topology while seeding the old CommonJS package exports in Node's cache.
+    delete packaged.dependencies.langsmith;
+    packaged.overrides = { langsmith: '0.10.5' };
+  }
   delete packaged.devDependencies;
   delete packaged.peerDependencies;
   delete packaged.optionalDependencies;
@@ -44,7 +50,7 @@ function checkLoaded() {
     assert.ok(runTrees.startsWith(installed + path.sep), 'LangSmith must come from this install');
     assert.ok(fs.existsSync(runTrees), 'The cached CommonJS export must still exist');
     const langsmith = JSON.parse(fs.readFileSync(path.join(path.dirname(runTrees), 'package.json')));
-    assert.equal(langsmith.version, manifest.dependencies.langsmith);
+    assert.equal(langsmith.version, manifest.overrides.langsmith);
     assert.equal(typeof dependencyReq('langsmith/run_trees').RunTree, 'function');
   }
   for (const entry of manifest.n8n.nodes) {
@@ -61,15 +67,30 @@ function assertTempTarget(target) {
   assert.ok(target === root || target.startsWith(root + path.sep));
 }
 
+function replaceDirectory() {
+  assertTempTarget(installed);
+  assertTempTarget(backup);
+  // Windows scanners may briefly hold a handle after npm or module loading.
+  // Retry only those transient errors, keeping permission failures visible.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(installed, backup);
+      return;
+    } catch (error) {
+      if (process.platform !== 'win32' || attempt >= 5 ||
+          !['EPERM', 'EBUSY', 'EACCES'].includes(error.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200 * (attempt + 1));
+    }
+  }
+}
+
 try {
-  install();
+  install(true);
   checkLoaded();
   console.log('Fresh n8n installation: passed');
   // Keep Node's internal package.json/export cache alive across the directory
   // replacement. Deleting require.cache alone does not clear that cache.
-  assertTempTarget(installed);
-  assertTempTarget(backup);
-  fs.renameSync(installed, backup);
+  replaceDirectory();
   install();
   for (const file of Object.keys(require.cache)) {
     if (file.startsWith(installed + path.sep)) delete require.cache[file];
@@ -78,5 +99,5 @@ try {
   console.log('n8n update with cached exports: passed');
 } finally {
   assertTempTarget(root);
-  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
 }
