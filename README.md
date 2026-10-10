@@ -1,7 +1,8 @@
 # LEADr PMS Memory
 
 Pacote `n8n-nodes-leadr-pms`: sub-node de memória para agentes n8n que lê e grava
-mensagens pela API da LEADr PMS. Usa `BufferWindowMemory` com `chat_history`,
+mensagens pela API de um sistema de gestão de hospedagens (PMS). Usa
+`BufferWindowMemory` com `chat_history`,
 `input`, `output` e `returnMessages: true`.
 
 O código do node é independente do projeto da API PMS. Este repositório contém
@@ -11,7 +12,8 @@ somente o pacote, seus testes e ferramentas de build.
 
 - Node.js 22.13.0 ou superior.
 - n8n com `n8n-workflow >=2.28.0 <3` disponível no ambiente do pacote.
-- Credencial PMS com `conversations:read`, `conversations:write` e `guests:contact`.
+- Uma chave de API do seu ambiente, com as permissões
+  `conversations:read`, `conversations:write` e `guests:contact`.
 
 O pacote foi compilado com `n8n-workflow 2.28.0`, `@langchain/classic 1.0.32`
 e `@langchain/core 1.2.8`. A versão do SDK `n8n-workflow` difere da versão do
@@ -22,20 +24,22 @@ aplicativo n8n; confira a compatibilidade do ambiente antes da instalação.
 1. Instale `n8n-nodes-leadr-pms` no ambiente do n8n.
 2. Adicione **LEADr PMS Memory** e conecte sua saída **Memory** à entrada de
    memória do agente.
-3. Selecione uma credencial **Header Auth** que envie
-   `Authorization: Bearer <chave PMS>`. Não coloque o segredo no campo de telefone.
-4. Informe o telefone do cliente com DDI e DDD, por exemplo `5511999990000` ou
-   `+5511999990000`. O campo aceita expressões do n8n.
+3. Configure uma credencial do tipo **Header Auth** no n8n, usando o cabeçalho
+   `Authorization` e o valor `Bearer <sua-chave-de-api>`. Selecione essa credencial
+   no node. O nome escolhido para ela é livre.
+4. Informe o telefone do contato com código do país e da região. Use uma string
+   com 8–15 dígitos, opcionalmente precedida por um único `+`.
 5. Ajuste **Opções → Janela de Contexto** se necessário. O padrão é 15 interações,
    equivalente às últimas 30 mensagens.
 
-A empresa é determinada pela credencial, mantendo históricos separados entre
-empresas. Como em outros sub-nodes n8n, expressões podem resolver apenas o primeiro
-item; não misture telefones em um lote do agente.
+A conta atendida é determinada pela chave de API, mantendo históricos separados
+entre contas. Como em outros sub-nodes n8n, expressões podem resolver apenas o
+primeiro item; processe um contato por execução do agente.
 
-O node usa `https://pms.leadr.company/api/v1`, com TLS validado, redirecionamentos
-desativados e o helper autenticado do n8n. Não requer acesso SQL ou parâmetros de
-empresa, tabela e endpoints.
+A comunicação usa HTTPS com TLS validado, redirecionamentos desativados e o
+helper autenticado do n8n. O endpoint da API é definido pelo pacote; não há campo
+para configurar outra URL. Não é necessário informar SQL, tabela ou identificador
+da conta no node.
 
 ## Comportamento
 
@@ -95,9 +99,10 @@ telefone com/sem `+` nos quatro endpoints; entradas inválidas e identidade
 divergente; paginação, IDs, versões, ordenação, isolamento por transporte
 autenticado, corrida na criação e repetição após resposta perdida.
 
-O teste integrado opcional (`npm run test:integration`) depende de um checkout
-separado da API PMS em `../LEADr_pms`, com suas dependências instaladas. Usa os
-handlers reais e PGlite isolado; não é necessário para executar a suíte local.
+O teste integrado opcional (`npm run test:integration`) requer o código-fonte da
+API e suas dependências em um ambiente de desenvolvimento separado. Usa handlers
+reais e um banco PGlite isolado. Não é necessário para executar a suíte local
+deste pacote.
 
 ## Instalação por artefato
 
@@ -148,12 +153,13 @@ do npm e confirma o commit da versão disponibilizada. Se o npm ainda mostrar
 
 ### Autorização inicial
 
-Na conta npm com permissão de manutenção do pacote, abra
-https://www.npmjs.com/package/n8n-nodes-leadr-pms/access e cadastre um
-**Trusted Publisher → GitHub Actions**:
+Para configurar a automação em um repositório sob sua administração, acesse as
+configurações do pacote no npm com uma conta mantenedora e cadastre um
+**Trusted Publisher → GitHub Actions**. Informe os dados do repositório que
+executará a publicação:
 
-- Organization or user: `LEADr-COMPANY`
-- Repository: `n8n-nodes-leadr-pms`
+- Organization or user: proprietário do repositório no GitHub
+- Repository: nome do repositório, sem o proprietário
 - Workflow filename: `publish.yml`
 - Environment name: deixe vazio
 - Allowed actions: permita publicação direta com `npm publish`
@@ -163,6 +169,10 @@ GitHub → Settings → Secrets and variables → Actions → Variables, e inici
 **Publish to npm** manualmente para validar a primeira publicação. Sem essa
 variável, o workflow verifica o pacote e informa que a publicação está pendente;
 não anuncia que publicou.
+
+O workflow deste projeto restringe a execução ao repositório de origem. Em um
+fork, ajuste essa condição e os metadados de repositório do `package.json` antes
+de configurar a publicação de um pacote que você administra.
 
 A autenticação usa OIDC, sem token npm permanente nos secrets. É necessário
 concluir a primeira publicação dentro do prazo da configuração informado pelo npm.
@@ -182,7 +192,7 @@ Documentação: https://docs.npmjs.com/trusted-publishers/.
 - Um contato removido após a inicialização não é recriado durante a gravação.
   Reset e recriação concorrente do mesmo telefone exigem coordenação externa;
   a leitura paginada não é um snapshot transacional.
-- A gravação mantém os efeitos previstos pela API, incluindo follow-up.
+- A gravação mantém os efeitos previstos pela API do ambiente.
   Limpar a memória não desfaz esses efeitos.
 - A janela recorta as últimas `2 × k` mensagens, inclusive mensagens de ferramentas.
 
