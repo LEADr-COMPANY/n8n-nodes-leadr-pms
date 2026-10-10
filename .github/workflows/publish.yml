@@ -47,6 +47,11 @@ jobs:
       - name: Prepare package
         if: steps.release.outputs.publish == 'true'
         run: npm pack
+      - name: Verify n8n installation and update
+        if: steps.release.outputs.publish == 'true'
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: npm run test:install -- "n8n-nodes-leadr-pms-${RELEASE_VERSION}.tgz"
       - name: Publish using npm trusted publishing
         if: steps.release.outputs.publish == 'true' && vars.NPM_PUBLISH_ENABLED == 'true'
         env:

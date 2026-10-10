@@ -90,6 +90,7 @@ cd n8n-nodes-leadr-pms
 npm ci --ignore-scripts
 npm test
 npm pack
+npm run test:install
 ```
 
 `npm test` compila o pacote e executa testes com respostas HTTP simuladas, sem
@@ -136,6 +137,8 @@ no n8n.
 O workflow `.github/workflows/publish.yml` executa a cada push na branch `main`
 e também pode ser iniciado manualmente na aba Actions. Ele instala as dependências,
 calcula uma versão inédita, compila, executa os testes e prepara o pacote.
+Antes de publicar, verifica a instalação do tarball e a atualização com o cache
+de módulos ativo, usando a estratégia de instalação do n8n.
 Com a autorização npm ativada, publica automaticamente como `latest`.
 Atualizações de outras branches não publicam.
 
