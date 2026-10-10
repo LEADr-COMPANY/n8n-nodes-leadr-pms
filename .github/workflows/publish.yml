@@ -52,6 +52,9 @@ jobs:
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
         run: npm publish "n8n-nodes-leadr-pms-${RELEASE_VERSION}.tgz" --access public
+      - name: Wait for npm validation
+        if: steps.release.outputs.publish == 'true' && vars.NPM_PUBLISH_ENABLED == 'true'
+        run: node scripts/wait-for-release.cjs
       - name: Record result
         env:
           PUBLISH_ENABLED: ${{ vars.NPM_PUBLISH_ENABLED }}

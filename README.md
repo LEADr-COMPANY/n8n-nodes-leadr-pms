@@ -142,6 +142,9 @@ a automação não cria commits de versão em `main`. Reexecutar um commit já p
 não cria uma versão duplicada. Execuções antigas não substituem um commit
 descendente já publicado. Publicações são serializadas em uma fila de até
 100 execuções pendentes; falhas de testes ou consulta ao registry interrompem o fluxo.
+Após enviar o pacote, o workflow aguarda até 10 minutos pela validação assíncrona
+do npm e confirma o commit da versão disponibilizada. Se o npm ainda mostrar
+`Validating` após esse prazo, confira o status antes de repetir a publicação.
 
 ### Autorização inicial
 
