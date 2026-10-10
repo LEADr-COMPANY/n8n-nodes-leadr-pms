@@ -1,0 +1,48 @@
+{
+  "name": "n8n-nodes-leadr-pms",
+  "version": "1.15.6",
+  "description": "LEADr PMS chat memory for n8n AI agents",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LEADr-COMPANY/n8n-nodes-leadr-pms.git"
+  },
+  "homepage": "https://github.com/LEADr-COMPANY/n8n-nodes-leadr-pms#readme",
+  "bugs": {
+    "url": "https://github.com/LEADr-COMPANY/n8n-nodes-leadr-pms/issues"
+  },
+  "license": "UNLICENSED",
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/validate-package.cjs && tsc -p tsconfig.json && node scripts/copy-assets.cjs",
+    "test": "npm run build && node --test test/*.test.cjs",
+    "prepack": "npm run build",
+    "test:integration": "npm run build && node ../LEADr_pms/node_modules/tsx/dist/cli.mjs --tsconfig ../LEADr_pms/tsconfig.json test/pms-api.integration.ts"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "nodes": [
+      "dist/nodes/PmsMemory/PmsMemory.node.js"
+    ]
+  },
+  "dependencies": {
+    "@langchain/classic": "1.0.32",
+    "@langchain/core": "1.2.8"
+  },
+  "peerDependencies": {
+    "n8n-workflow": ">=2.28.0 <3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.15",
+    "n8n-workflow": "2.28.0",
+    "typescript": "5.9.3"
+  }
+}

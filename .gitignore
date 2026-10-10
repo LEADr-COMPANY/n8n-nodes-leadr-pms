@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tgz
+*.log
+pack-result.json
+.env
+.env.*
+!.env.example
+.npmrc
+.codex/
+.agents/
