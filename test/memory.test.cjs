@@ -6,7 +6,7 @@ const { PmsChatHistory, PMS_URL, normalizePhone } = require('../dist/lib/PmsChat
 const { PmsMemory } = require('../dist/nodes/PmsMemory/PmsMemory.node.js');
 const phone = '5511999990000', other = '5511888880000', version = 'a'.repeat(64);
 
-function fixture(responsePhones = {}) {
+function fixture(responsePhones = {}, emptyLists = []) {
   const contacts = new Map(), rows = new Map(), calls = [], replay = new Map();
   let nextId = 9007199254740993n, hook;
   const transport = async options => {
@@ -59,6 +59,8 @@ function fixture(responsePhones = {}) {
     const response = structuredClone(await transport(options));
     const route = new URL(options.url).pathname.replace('/api/v1/', '');
     const data = response.body.data;
+    if (response.statusCode === 200 && options.method === 'GET' && emptyLists.includes(route) &&
+        Array.isArray(data?.items) && data.items.length === 0) response.body = [];
     if (data && responsePhones[options.method + ' ' + route]) {
       for (const row of data.items ?? [data]) {
         if (typeof row.phone === 'string') row.phone = '+' + row.phone;
@@ -457,4 +459,122 @@ test('same phone with different prefixes remains isolated by authenticated trans
   assert.deepEqual((await b.getMessages()).map(m => m.content), ['Empresa B']);
   await a.clear();
   assert.deepEqual((await b.getMessages()).map(m => m.content), ['Empresa B']);
+});
+
+test('root empty lists preserve new/existing contacts, save and reload across API formats', async t => {
+  for (const emptyLists of [['contacts'], ['message-history'], ['contacts', 'message-history']]) {
+    for (const input of [phone, '+' + phone]) {
+      for (const initial of ['new', 'existing-empty', 'existing-populated']) {
+        await t.test(`${emptyLists.join(',')} input=${input} contact=${initial}`, async () => {
+          const f = fixture({}, emptyLists);
+          if (initial !== 'new') f.seed(initial === 'existing-populated' ? 2 : 0);
+          f.seed(1, other);
+          const contact = structuredClone(f.contacts.get(phone));
+          const before = structuredClone([...f.rows.values()]);
+          const m = memory(new PmsChatHistory(f.transport, input));
+          const loaded = await m.loadMemoryVariables({ input: 'Oi' });
+          assert.deepEqual(loaded.chat_history.map(m => m.content), initial === 'existing-populated' ? ['m0', 'm1'] : []);
+          assert.deepEqual([...f.rows.values()], before);
+          if (contact) assert.deepEqual(f.contacts.get(phone), contact);
+          await m.saveContext({ input: 'Oi' }, { output: 'Olá' });
+          const h = new PmsChatHistory(f.transport, input);
+          assert.deepEqual((await h.getMessages()).map(m => m.content), [...loaded.chat_history.map(m => m.content), 'Oi', 'Olá']);
+          assert.equal(f.calls.filter(c => c.method === 'POST' && c.url.endsWith('/contacts')).length, initial === 'new' ? 1 : 0);
+          await h.clear();
+          assert.deepEqual(await h.getMessages(), []);
+          assert.equal([...f.rows.values()].filter(row => row.phone === other).length, 1);
+          assert.equal(f.contacts.size, 2);
+        });
+      }
+    }
+  }
+});
+
+test('clear accepts a root empty history without creating a contact or deleting anything', async () => {
+  const f = fixture({}, ['contacts', 'message-history']);
+  await f.history().clear();
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].method, 'GET');
+  assert.ok(f.calls[0].url.includes('/message-history?'));
+  assert.equal(f.contacts.size, 0);
+});
+
+test('root empty contact lookup preserves the creation race and rejects an absent winner', async () => {
+  for (const winnerVisible of [true, false]) {
+    const f = fixture({}, ['contacts', 'message-history']);
+    f.hook((options, path) => {
+      if (path === '/contacts' && options.method === 'POST') {
+        if (winnerVisible) f.contacts.set(phone, { phone: '+' + phone, name: 'Concurrent', flag: true });
+        return { statusCode: 409, body: { code: 'record_exists' } };
+      }
+    });
+    if (winnerVisible) {
+      assert.deepEqual(await f.history().getMessages(), []);
+      assert.equal(f.contacts.get(phone).name, 'Concurrent');
+      assert.equal(f.contacts.get(phone).flag, true);
+    } else {
+      await assert.rejects(f.history().getMessages(), e => e.code === 'record_exists');
+      assert.equal(f.calls.filter(c => c.url.includes('/message-history')).length, 0);
+    }
+    assert.equal(f.calls.filter(c => c.method === 'POST').length, 1);
+  }
+});
+
+test('a root empty terminal page preserves all earlier messages and their deletion versions', async () => {
+  const f = fixture({}, ['message-history']); f.seed(100);
+  const transport = async options => {
+    const response = await f.transport(options);
+    if (options.url.includes('/message-history?') && !new URL(options.url).searchParams.has('after')) {
+      response.body.data.next_cursor = response.body.data.items.at(-1).id;
+    }
+    return response;
+  };
+  const h = new PmsChatHistory(transport, phone);
+  assert.equal((await h.getMessages()).length, 100);
+  await h.clear();
+  const deletes = f.calls.filter(c => c.method === 'DELETE');
+  assert.equal(deletes.length, 100);
+  assert.ok(deletes.every(c => c.body.version === version));
+  assert.equal(f.rows.size, 0);
+});
+
+test('only HTTP 200 root empty arrays are accepted on collection GETs', async t => {
+  for (const route of ['contacts', 'message-history']) {
+    for (const body of [null, {}, { data: null }, { data: [] }, { data: {} }, [{}], [null], '[]']) {
+      await t.test(`${route} rejects malformed ${JSON.stringify(body)}`, async () => {
+        const f = fixture(); f.seed(1);
+        const transport = async options => options.method === 'GET' &&
+          new URL(options.url).pathname === '/api/v1/' + route
+          ? { statusCode: 200, body } : f.transport(options);
+        await assert.rejects(new PmsChatHistory(transport, phone).getMessages(), e => e.code === 'invalid_response');
+        assert.equal(f.calls.filter(c => c.method !== 'GET').length, 0);
+      });
+    }
+    for (const statusCode of [201, 204, 206, 302, 401, 403, 404, 429, 500, 502, 503, 504]) {
+      await t.test(`${route} rejects HTTP ${statusCode} with []`, async () => {
+        const f = fixture(); f.seed(1);
+        const transport = async options => options.method === 'GET' &&
+          new URL(options.url).pathname === '/api/v1/' + route
+          ? { statusCode, body: [] } : f.transport(options);
+        await assert.rejects(new PmsChatHistory(transport, phone).getMessages(), e =>
+          statusCode < 300 ? e.code === 'invalid_response' : e.status === statusCode);
+        assert.equal(f.calls.filter(c => c.method !== 'GET').length, 0);
+      });
+    }
+  }
+});
+
+test('empty array write responses never count as successful contact, message or deletion writes', async () => {
+  for (const route of ['POST contacts', 'POST message-history', 'DELETE message-history/']) {
+    const f = fixture();
+    if (route !== 'POST contacts') f.seed(1);
+    const transport = async options => {
+      const current = options.method + ' ' + new URL(options.url).pathname.replace('/api/v1/', '');
+      if (current.startsWith(route)) return { statusCode: options.method === 'POST' ? 201 : 200, body: [] };
+      return f.transport(options);
+    };
+    const h = new PmsChatHistory(transport, phone);
+    await assert.rejects(route.startsWith('DELETE') ? h.clear() : h.addUserMessage('Oi'), e => e.code === 'invalid_response');
+    assert.equal(f.rows.size, route === 'POST contacts' ? 0 : 1);
+  }
 });

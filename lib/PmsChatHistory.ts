@@ -95,6 +95,13 @@ export class PmsChatHistory extends BaseListChatMessageHistory {
       const status = response.statusCode;
       if ([500, 502, 503, 504].includes(status) && attempt === 0) continue;
       if (status < 200 || status >= 300) throw apiError(status, response.body);
+      // The PMS returns a root [] for empty reads. Normalize only the two
+      // collection GETs; a missing or malformed write response is still an error.
+      if (status === 200 && method === 'GET' &&
+          (path.startsWith('/contacts?') || path.startsWith('/message-history?')) &&
+          Array.isArray(response.body) && response.body.length === 0) {
+        return { items: [], next_cursor: null };
+      }
       if (!object(response.body) || !object(response.body.data)) invalidResponse();
       return response.body.data;
     }

@@ -54,6 +54,14 @@ O histórico completo permanece disponível ao Chat Memory Manager. A janela afe
 somente o contexto do agente, sem expiração, resumo automático ou exclusão por
 limite de contexto.
 
+Consultas `GET /contacts?phone=...` e `GET /message-history?phone=...` aceitam
+HTTP `200` com `[]` na raiz quando não há dados, além do formato existente
+`{data:{items:[],next_cursor:null}}`. Contato ausente segue para a criação mínima;
+histórico vazio fornece contexto vazio, e a limpeza sem mensagens não exclui nada.
+Uma página final `[]` encerra a paginação preservando as mensagens já lidas.
+Respostas inválidas, arrays não vazios na raiz, erros HTTP e respostas vazias de
+escrita continuam gerando erro explícito.
+
 Os serializadores LangChain preservam mensagens humanas, IA, sistema, ferramentas,
 multimídia e metadados. São aceitos `{type,data}`, o legado `{type,text}` e o formato
 plano `{type,content,...}`. A leitura normaliza o formato plano sem regravar o
