@@ -2,17 +2,17 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { BufferWindowMemory } = require('@langchain/classic/memory');
 const { HumanMessage, AIMessage, ToolMessage, SystemMessage, mapChatMessagesToStoredMessages } = require('@langchain/core/messages');
-const { PmsChatHistory, PMS_URL, normalizePhone } = require('../dist/lib/PmsChatHistory.js');
+const { PmsChatHistory, PMS_URL, normalizeEndpoint, normalizePhone } = require('../dist/lib/PmsChatHistory.js');
 const { PmsMemory } = require('../dist/nodes/PmsMemory/PmsMemory.node.js');
 const phone = '5511999990000', other = '5511888880000', version = 'a'.repeat(64);
 
-function fixture(responsePhones = {}, emptyLists = []) {
+function fixture(responsePhones = {}, emptyLists = [], endpoint = PMS_URL) {
   const contacts = new Map(), rows = new Map(), calls = [], replay = new Map();
   let nextId = 9007199254740993n, hook;
   const transport = async options => {
     calls.push(structuredClone(options));
-    const url = new URL(options.url), path = url.pathname.replace('/api/v1', '');
-    assert.equal(url.origin, 'https://pms.leadr.company');
+    const url = new URL(options.url), path = url.pathname.slice(new URL(endpoint).pathname.length);
+    assert.equal(url.origin, new URL(endpoint).origin);
     assert.equal(options.disableFollowRedirect, true);
     assert.equal(options.returnFullResponse, true);
     const injected = hook && await hook(options, path);
@@ -577,4 +577,49 @@ test('empty array write responses never count as successful contact, message or 
     await assert.rejects(route.startsWith('DELETE') ? h.clear() : h.addUserMessage('Oi'), e => e.code === 'invalid_response');
     assert.equal(f.rows.size, route === 'POST contacts' ? 0 : 1);
   }
+});
+
+
+test('endpoint defaults preserve old workflows and reject invalid explicit settings', () => {
+  for (const value of [undefined, null, '', '   ']) assert.equal(normalizeEndpoint(value), PMS_URL);
+  assert.equal(normalizeEndpoint(' https://crm.example.com/custom/api/// '), 'https://crm.example.com/custom/api');
+  for (const value of ['/', 'crm.example.com', 'http://crm.example.com', 'https://u:secret@crm.example.com',
+    'https://crm.example.com?token=secret', 'https://crm.example.com/#fragment', 42, {}]) {
+    assert.throws(() => normalizeEndpoint(value), error => error.code === 'invalid_endpoint' && !error.message.includes('secret'));
+  }
+});
+
+test('supplyData routes every operation to the selected API and keeps the legacy default', async () => {
+  for (const endpoint of [undefined, '', '   ', ' https://crm.example.com/custom/api/// ']) {
+    const base = endpoint?.trim() ? 'https://crm.example.com/custom/api' : PMS_URL;
+    const f = fixture({}, [], base), node = new PmsMemory();
+    const context = {
+      getNodeParameter: name => name === 'phone' ? phone : (endpoint === undefined ? {} : { endpoint }),
+      getNode: () => ({ name: 'LEADr PMS Memory', typeVersion: 1 }),
+      addInputData: () => ({ index: 0 }), addOutputData: () => {},
+      helpers: { httpRequestWithAuthentication: async function(credential, options) {
+        assert.equal(credential, 'httpHeaderAuth');
+        assert.ok(options.url.startsWith(base + '/'), options.url);
+        return f.transport(options);
+      } },
+    };
+    const { response } = await node.supplyData.call(context, 0);
+    await response.loadMemoryVariables({});
+    await response.saveContext({ input: 'hello' }, { output: 'hi' });
+    await response.clear();
+    assert.equal(f.rows.size, 0);
+    for (const [method, route] of [['GET', '/contacts?'], ['POST', '/contacts'],
+      ['GET', '/message-history?'], ['POST', '/message-history'], ['DELETE', '/message-history/']]) {
+      assert.ok(f.calls.some(call => call.method === method && call.url.startsWith(base + route)));
+    }
+  }
+});
+
+test('supplyData rejects an invalid endpoint before making authenticated requests', async () => {
+  const context = {
+    getNodeParameter: name => name === 'phone' ? phone : { endpoint: 'invalid' },
+    getNode: () => ({ name: 'LEADr PMS Memory', typeVersion: 1 }),
+    helpers: { httpRequestWithAuthentication: () => assert.fail('must not send a request') },
+  };
+  await assert.rejects(new PmsMemory().supplyData.call(context, 0), /endpoint HTTPS/);
 });

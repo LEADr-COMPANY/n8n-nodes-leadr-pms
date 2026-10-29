@@ -20,6 +20,21 @@ export class PmsMemoryError extends Error {
   }
 }
 
+/** Empty and missing settings preserve the endpoint used by existing workflows. */
+export function normalizeEndpoint(value: unknown): string {
+  if (value === undefined || value === null || value === '') return PMS_URL;
+  if (typeof value === 'string') {
+    if (!value.trim()) return PMS_URL;
+    const endpoint = value.trim().replace(/\/+$/, '');
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol === 'https:' && url.hostname && !url.username && !url.password &&
+          !url.search && !url.hash && !endpoint.includes('?') && !endpoint.includes('#')) return endpoint;
+    } catch { /* Report a safe configuration error without exposing the URL. */ }
+  }
+  throw new PmsMemoryError('invalid_endpoint', 'Informe um endpoint HTTPS válido, sem credenciais, query string ou fragmento.');
+}
+
 export function normalizePhone(value: unknown): string {
   // Do not silently turn arbitrary text, JIDs or expressions into a different session.
   if (typeof value !== 'string' || !/^\+?[0-9\s().-]+$/.test(value.trim())) {
@@ -64,9 +79,12 @@ export class PmsChatHistory extends BaseListChatMessageHistory {
   readonly phone: string;
   private initialized?: Promise<void>;
 
-  constructor(private readonly transport: Transport, phone: string) {
+  private readonly endpoint: string;
+
+  constructor(private readonly transport: Transport, phone: string, endpoint?: string) {
     super();
     this.phone = normalizePhone(phone);
+    this.endpoint = normalizeEndpoint(endpoint);
   }
 
   private async request(method: 'GET' | 'POST' | 'DELETE', path: string, body?: RecordValue): Promise<RecordValue> {
@@ -74,7 +92,7 @@ export class PmsChatHistory extends BaseListChatMessageHistory {
       throw new PmsMemoryError('payload_too_large', 'Mensagem maior que o limite de 64 KiB da API. Nenhum conteúdo foi truncado.', 413);
     }
     const options: IHttpRequestOptions = {
-      method, url: PMS_URL + path, json: true, timeout: 30000,
+      method, url: this.endpoint + path, json: true, timeout: 30000,
       disableFollowRedirect: true, returnFullResponse: true, ignoreHttpStatusErrors: true,
       headers: { Accept: 'application/json',
         ...(body ? { 'Content-Type': 'application/json', 'Idempotency-Key': 'pms-memory-' + randomUUID() } : {}) },

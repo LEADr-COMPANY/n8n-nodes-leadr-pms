@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-leadr-pms",
-  "version": "1.15.11",
+  "version": "1.15.12",
   "description": "LEADr PMS chat memory for n8n AI agents",
   "repository": {
     "type": "git",

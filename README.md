@@ -36,9 +36,18 @@ A conta atendida é determinada pela chave de API, mantendo históricos separado
 entre contas. Como em outros sub-nodes n8n, expressões podem resolver apenas o
 primeiro item; processe um contato por execução do agente.
 
+Para usar outra API com o mesmo contrato, preencha **Opções → Endpoint da API**
+com a URL base completa, por exemplo `https://crm.example.com/api/v1`, e selecione
+sua credencial Header Auth correspondente. O prefixo `/api/v1` deve fazer parte
+da URL quando exigido pela API. Barras finais e espaços nas extremidades são removidos.
+
+Se a opção estiver ausente, vazia ou contiver apenas espaços, o node continua usando
+`https://pms.leadr.company/api/v1`. Workflows existentes não precisam ser editados.
+A URL configurada vale para leitura, criação de contatos, gravação e limpeza de mensagens.
+Um endpoint preenchido inválido gera erro de configuração; não redireciona para a PMS.
+
 A comunicação usa HTTPS com TLS validado, redirecionamentos desativados e o
-helper autenticado do n8n. O endpoint da API é definido pelo pacote; não há campo
-para configurar outra URL. Não é necessário informar SQL, tabela ou identificador
+helper autenticado do n8n. Não é necessário informar SQL, tabela ou identificador
 da conta no node.
 
 ## Comportamento

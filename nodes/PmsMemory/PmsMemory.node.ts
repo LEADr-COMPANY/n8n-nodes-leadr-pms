@@ -1,7 +1,7 @@
 import { BufferWindowMemory } from '@langchain/classic/memory';
 import type { IDataObject, INodeType, INodeTypeDescription, ISupplyDataFunctions, SupplyData } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import { normalizePhone, PmsChatHistory, PmsMemoryError } from '../../lib/PmsChatHistory';
+import { normalizeEndpoint, normalizePhone, PmsChatHistory, PmsMemoryError } from '../../lib/PmsChatHistory';
 
 export class PmsMemory implements INodeType {
   description: INodeTypeDescription = {
@@ -18,11 +18,14 @@ export class PmsMemory implements INodeType {
     credentials: [{ name: 'httpHeaderAuth', required: true }],
     codex: { categories: ['AI'], subcategories: { AI: ['Memory'] } },
     properties: [
-      { displayName: 'Selecione a credencial Header Auth da PMS (Authorization: Bearer). Conecte este node à entrada Memory do agente.', name: 'notice', type: 'notice', default: '' },
+      { displayName: 'Selecione a credencial Header Auth da API (Authorization: Bearer). Conecte este node à entrada Memory do agente.', name: 'notice', type: 'notice', default: '' },
       { displayName: 'Telefone do Cliente', name: 'phone', type: 'string', default: '', required: true,
-        placeholder: '5511999990000', description: 'Telefone com DDI e DDD. Aceita expressão. A empresa é definida pela credencial PMS.' },
+        placeholder: '5511999990000', description: 'Telefone com DDI e DDD. Aceita expressão. A empresa é definida pela credencial da API.' },
       { displayName: 'Opções', name: 'options', type: 'collection', placeholder: 'Adicionar opção', default: {},
         options: [
+          { displayName: 'Endpoint da API', name: 'endpoint', type: 'string', default: '',
+            placeholder: 'https://pms.leadr.company/api/v1',
+            description: 'URL base completa da API, incluindo o prefixo (ex.: /api/v1). Vazio usa a PMS. Se informar outra API, selecione a credencial correspondente.' },
           { displayName: 'Janela de Contexto', name: 'contextWindowLength', type: 'number', default: 15,
             typeOptions: { minValue: 1, numberPrecision: 0 },
             description: 'Quantidade de interações no contexto, como no Postgres Chat Memory. Cada interação equivale a duas mensagens; o histórico completo permanece salvo.' },
@@ -33,9 +36,11 @@ export class PmsMemory implements INodeType {
   async supplyData(this: ISupplyDataFunctions, itemIndex: number): Promise<SupplyData> {
     let phone: string;
     let k: number;
+    let endpoint: string;
     try {
       phone = normalizePhone(this.getNodeParameter('phone', itemIndex));
       const options = this.getNodeParameter('options', itemIndex, {}) as IDataObject;
+      endpoint = normalizeEndpoint(options.endpoint);
       k = options.contextWindowLength === undefined ? 15 : Number(options.contextWindowLength);
       if (!Number.isSafeInteger(k) || k < 1) throw new PmsMemoryError('invalid_window', 'A janela de contexto deve ser um inteiro maior que zero.');
     } catch (error) {
@@ -44,6 +49,7 @@ export class PmsMemory implements INodeType {
     const history = new PmsChatHistory(
       options => this.helpers.httpRequestWithAuthentication.call(this, 'httpHeaderAuth', options),
       phone,
+      endpoint,
     );
     const memory = new BufferWindowMemory({
       chatHistory: history, memoryKey: 'chat_history', inputKey: 'input',
